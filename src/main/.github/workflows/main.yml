@@ -1,0 +1,10 @@
+name: Ejecutar CI Centralizado
+
+on:
+  push:
+    branches: [ "master" ] # Se activa cuando subes algo a master
+
+jobs:
+  llamar-al-ci:
+    # Aquí llamas a tu Repo 1 (CI)
+    uses: djbubble/ci-centralizado/.github/workflows/reusable-pipeline.yml@main
