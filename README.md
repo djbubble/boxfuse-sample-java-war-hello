@@ -22,4 +22,4 @@ Done!
 
 Open your browser at http://localhost:8888 or simple type ```boxfuse open hello:1.0``` to see your brand new instance in action!
 
-## AÑADIDO COMENTARIO PARA HACER COMMIT
+## AÑADIDO COMENTARIO PARA HACER COMMIT.
