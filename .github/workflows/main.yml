@@ -8,4 +8,5 @@ jobs:
   llamar-al-ci:
     # Aquí llamas a tu Repo 1 (CI)
     uses: djbubble/ci-centralizado/.github/workflows/reusable-pipeline.yml@main
-    secrets: inherit # De esta manera paso los secretos de Repo2 a Repo1, que pueda usar mis credenciales
+    secrets: 
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
