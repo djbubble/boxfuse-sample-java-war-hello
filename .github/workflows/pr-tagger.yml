@@ -1,0 +1,56 @@
+name: PR Auto Tagger
+
+# El robot se despierta cuando un Pull Request se cierra
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  create-tag:
+    # Solo se ejecuta si el PR se cerró porque se aceptó (Merged)
+    # y no si simplemente se canceló o cerró sin cambios.
+    if: github.event.pull_request.merged == true
+    # genera una instancia de linux.
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write # IMPORTANTE: Permiso para que el robot pueda crear el Tag
+
+    steps:
+      # Descargamos el código.
+      - name: Checkout del código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Trae todo el historial para poder etiquetar correctamente
+
+      - name: Extraer valor del Tag desde el PR
+        id: extract
+        # Pasamos el cuerpo del PR como una variable segura
+        env:
+          CUERPO_PR: ${{ github.event.pull_request.body }}
+        run: |
+          # 1. Cogemos el cuerpo (body) del PR
+          # 2. Buscamos la línea que empieza por "Tag:"
+          # 3. Usamos 'sed' o 'grep' para quedarnos solo con lo que hay después de los dos puntos
+          TAG_VALUE=$(echo "$CUERPO_PR" | grep "Tag:" | sed 's/.*Tag:[[:space:]]*//' | head -n 1 | xargs)
+          
+          if [ -z "$TAG_VALUE" ]; then
+            echo "No se ha encontrado ningún 'Tag: vX.X.X' en la descripción del PR."
+            exit 1
+          fi
+          
+          echo "tag_detected=$TAG_VALUE" >> $GITHUB_OUTPUT
+          echo "Tag a crear: $TAG_VALUE"
+
+      - name: Crear y subir el Tag a GitHub
+        if: steps.extract.outputs.tag_detected != ''
+        run: |
+          # Configuración de identidad del robot (para que el historial sea legal y no anónimo)
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          
+          # Creamos el tag sobre el commit de Squash (que es el HEAD actual en master)
+          git tag ${{ steps.extract.outputs.tag_detected }}
+          
+          # Subimos el tag al servidor
+          git push origin ${{ steps.extract.outputs.tag_detected }}
