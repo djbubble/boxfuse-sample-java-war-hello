@@ -29,10 +29,11 @@ jobs:
         env:
           CUERPO_PR: ${{ github.event.pull_request.body }}
         run: |
-          # 1. Cogemos el cuerpo (body) del PR
-          # 2. Buscamos la línea que empieza por "Tag:"
-          # 3. Usamos 'sed' o 'grep' para quedarnos solo con lo que hay después de los dos puntos
-          TAG_VALUE=$(echo "$CUERPO_PR" | grep "Tag:" | sed 's/.*Tag:[[:space:]]*//' | head -n 1 | xargs)
+          # 1. Buscamos la línea que contiene "Tag:"
+          # 2. Quitamos el texto "Tag:"
+          # 3. TRUCO: 'tr -d "\r"' elimina los saltos de línea invisibles de Windows
+          # 4. 'xargs' limpia espacios al principio y al final
+          TAG_VALUE=$(echo "$CUERPO_PR" | grep "Tag:" | sed 's/.*Tag:[[:space:]]*//' | tr -d '\r' | xargs)
           
           if [ -z "$TAG_VALUE" ]; then
             echo "No se ha encontrado ningún 'Tag: vX.X.X' en la descripción del PR."
