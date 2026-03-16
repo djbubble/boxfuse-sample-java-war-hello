@@ -28,7 +28,7 @@ jobs:
         id: get_version
         # Pasamos el cuerpo del PR como una variable segura.
         env:
-          CUERPO_PR: ${{ github.event.pull_request.body }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           # Extraemos el valor del campo 'Tag:' de la plantilla
           # Limpiamos saltos de línea (\r) y espacios (xargs)
