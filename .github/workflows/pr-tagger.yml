@@ -3,14 +3,14 @@ name: PR Auto Tagger
 # El robot se despierta cuando un Pull Request se cierra
 on:
   pull_request:
-    types: [closed]
+    types: [closed]  # Sigue siendo este el evento aunque afinamos la lógica interna para que sea cuando el Squash & Merge.
 
 jobs:
-  create-tag:
+  tag-release:
     # Solo se ejecuta si el PR se cerró porque se aceptó (Merged)
     # y no si simplemente se canceló o cerró sin cambios.
     if: github.event.pull_request.merged == true
-    # genera una instancia de linux.
+    # Genera una instancia de linux.
     runs-on: ubuntu-latest
     
     permissions:
@@ -21,37 +21,39 @@ jobs:
       - name: Checkout del código
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.base.ref }} # Nos aseguramos de estar en la rama destino (master).
           fetch-depth: 0 # Trae todo el historial para poder etiquetar correctamente
 
-      - name: Extraer valor del Tag desde el PR
-        id: extract
-        # Pasamos el cuerpo del PR como una variable segura
+      - name: Extraer Version de la Plantilla
+        id: get_version
+        # Pasamos el cuerpo del PR como una variable segura.
         env:
-          CUERPO_PR: ${{ github.event.pull_request.body }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          # 1. Buscamos la línea que contiene "Tag:"
-          # 2. Quitamos el texto "Tag:"
-          # 3. TRUCO: 'tr -d "\r"' elimina los saltos de línea invisibles de Windows
-          # 4. 'xargs' limpia espacios al principio y al final
-          TAG_VALUE=$(echo "$CUERPO_PR" | grep "Tag:" | sed 's/.*Tag:[[:space:]]*//' | tr -d '\r' | xargs)
+          # Extraemos el valor del campo 'Tag:' de la plantilla
+          # Limpiamos saltos de línea (\r) y espacios (xargs)
+          VERSION=$(echo "$PR_BODY" | grep "Tag:" | sed 's/.*Tag:[[:space:]]*//' | tr -d '\r' | xargs)
           
-          if [ -z "$TAG_VALUE" ]; then
-            echo "No se ha encontrado ningún 'Tag: vX.X.X' en la descripción del PR."
-            exit 1
+          if [ -z "$VERSION" ]; then
+            echo "No se encontró tag en la plantilla. Saltando etiquetado."
+            exit 0
           fi
           
-          echo "tag_detected=$TAG_VALUE" >> $GITHUB_OUTPUT
-          echo "Tag a crear: $TAG_VALUE"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Versión detectada para la rama final: $VERSION"
 
-      - name: Crear y subir el Tag a GitHub
-        if: steps.extract.outputs.tag_detected != ''
+      - name: Aplicar Tag al Código Mergeado
+        if: steps.get_version.outputs.version != ''
         run: |
-          # Configuración de identidad del robot (para que el historial sea legal y no anónimo)
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           
-          # Creamos el tag sobre el commit de Squash (que es el HEAD actual en master)
-          git tag ${{ steps.extract.outputs.tag_detected }}
+          # Etiquetar el código ya mergeado (el resultado del squash)
+          # El commit de Squash es el que está ahora mismo en la punta (HEAD) de master
+          TAG_NAME="${{ steps.get_version.outputs.version }}"
           
-          # Subimos el tag al servidor
-          git push origin ${{ steps.extract.outputs.tag_detected }}
+          # Creamos el tag con un mensaje descriptivo que incluya el número de PR (tag anotado)
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME de PR #${{ github.event.pull_request.number }}"
+          
+          # Subimos el tag
+          git push origin "$TAG_NAME"
