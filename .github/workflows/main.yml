@@ -6,7 +6,7 @@ on:
 
 jobs:
   llamar-al-ci:
-    # Aquí llamas a tu Repo 1 (CI)
+    # Aquí llamas a tu Repo 1 (CI-centralizado)
     uses: djbubble/ci-centralizado/.github/workflows/reusable-pipeline.yml@main
     secrets: 
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Pasamos directamente el secreto.
