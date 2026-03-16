@@ -1,5 +1,5 @@
 name: Ejecutar CI Centralizado
-# Comentario para hacer pull 3
+# Comentario para hacer pull 4
 on:
   push:
     branches: [ "master" ] # Se activa cuando subes algo a master
