@@ -1,5 +1,5 @@
 ## Descripción de los cambios
-(Escribe aquí qué has hecho, por ejemplo: "Añadida nueva funcionalidad de login")
+(Escribe aquí qué has hecho)
 
-## Etiquetado Automático o indique uno específico
+## Etiquetado Automático
 Tag: v1.0
