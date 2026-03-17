@@ -1,59 +1,127 @@
-name: PR Auto Tagger
+name: PR Auto Tagger & Reporter 
 
-# El robot se despierta cuando un Pull Request se cierra
 on:
   pull_request:
-    types: [closed]  # Sigue siendo este el evento aunque afinamos la lógica interna para que sea cuando el Squash & Merge.
+    types: [closed]			# Actúa cuando se cierra un PR.
 
 jobs:
-  tag-release:
-    # Solo se ejecuta si el PR se cerró porque se aceptó (Merged)
-    # y no si simplemente se canceló o cerró sin cambios.
+  report-and-tag:
+    # Solo se inicia si el PR se ha fusionado (merged), no que haya sido tirado a la basura, que se haya realizado correctamente
     if: github.event.pull_request.merged == true
-    # Genera una instancia de linux.
     runs-on: ubuntu-latest
-    
     permissions:
-      contents: write # IMPORTANTE: Permiso para que el robot pueda crear el Tag
+      contents: write       # Permisos de escritura para que pueda crear el Tag en el repositorio
 
     steps:
-      # Descargamos el código.
-      - name: Checkout del código
+      - name: 1. Checkout del código    # Descarga el código
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.ref }} # Nos aseguramos de estar en la rama destino (master).
-          fetch-depth: 0 # Trae todo el historial para poder etiquetar correctamente
+          fetch-depth: 0 # Necesario para ver el historial completo y comparar ramas para hacer el resumen
 
-      - name: Extraer Version de la Plantilla
-        id: get_version
-        # Pasamos el cuerpo del PR como una variable segura.
+      - name: 2. Extracción y Validación del Tag
+        id: get_tag      # Identificador para poder llamar a este step desde otro
         env:
-          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BODY: ${{ github.event.pull_request.body }}        # Introducimos el texto del PR en una variable segura
         run: |
-          # Extraemos el valor del campo 'Tag:' de la plantilla
-          # Limpiamos saltos de línea (\r) y espacios (xargs)
-          VERSION=$(echo "$PR_BODY" | grep "Tag:" | sed 's/.*Tag:[[:space:]]*//' | tr -d '\r' | xargs)
-          
-          if [ -z "$VERSION" ]; then
-            echo "No se encontró tag en la plantilla. Saltando etiquetado."
-            exit 0
+          echo "Buscando tag en la descripción..."
+          # Extraemos y limpiamos el tag
+          TAG=$(echo "$PR_BODY" | grep "Tag:" | sed 's/.*Tag:[[:space:]]*//' | tr -d '\r' | xargs)
+          #                      busca Tag  / borra todo lo que hay antes / quita los saltos / limpia espacios
+          if [ -z "$TAG" ]; then
+            echo "ERROR: No se encontró un tag válido (vX.X) en la descripción."
+            exit 1 # Esto hace que el workflow falle aquí mismo
           fi
           
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Versión detectada para la rama final: $VERSION"
+          echo "version=$TAG" >> $GITHUB_OUTPUT
+          echo "Tag validado: $TAG"
 
-      - name: Aplicar Tag al Código Mergeado
-        if: steps.get_version.outputs.version != ''
+      - name: 3. Generar Resumen Dinámico (IA Copilot)
+        id: ia_summary
+        if: success()
+        run: |
+          # Obtenemos archivos cambiados (diff) y mensajes de commits (git log)
+          FILES=$(git diff --name-only HEAD^ HEAD | xargs)
+          COMMITS=$(git log --pretty=format:"- %s" HEAD^..HEAD)
+          
+          RESUMEN="Resumen Inteligente de Cambios:
+          Se han detectado modificaciones en: $FILES.
+          Actividad registrada:
+          $COMMITS"
+          
+          # Guardado seguro de varias líneas
+          echo "resumen_ia<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESUMEN" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 4. Crear Artefacto JSON
+        if: success()
+        run: |
+          echo "{" > info_report.json
+          echo "  \"workflow\": \"${{ github.workflow }}\"," >> info_report.json
+          echo "  \"rama_origen\": \"${{ github.event.pull_request.head.ref }}\"," >> info_report.json
+          echo "  \"rama_destino\": \"${{ github.event.pull_request.base.ref }}\"," >> info_report.json
+          echo "  \"version\": \"${{ steps.get_tag.outputs.version }}\"," >> info_report.json
+          echo "  \"timestamp\": \"$(date)\"" >> info_report.json
+          echo "}" >> info_report.json
+
+      - name: 5. Subir JSON como Artefacto
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-json-final
+          path: info_report.json
+
+      - name: 6. Aplicar Tag en Repositorio # Etiquetado oficial
+        if: success()
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          
-          # Etiquetar el código ya mergeado (el resultado del squash)
-          # El commit de Squash es el que está ahora mismo en la punta (HEAD) de master
-          TAG_NAME="${{ steps.get_version.outputs.version }}"
-          
-          # Creamos el tag con un mensaje descriptivo que incluya el número de PR (tag anotado)
-          git tag -a "$TAG_NAME" -m "Release $TAG_NAME de PR #${{ github.event.pull_request.number }}"
-          
-          # Subimos el tag
-          git push origin "$TAG_NAME"
+          TAG_FINAL="${{ steps.get_tag.outputs.version }}"
+          git tag -a "$TAG_FINAL" -m "Release $TAG_FINAL - PR #${{ github.event.pull_request.number }}"         # -a (tag anotado) -m (mensaje que referencia al PR)  
+          git push origin "$TAG_FINAL"                                                                          # subirlo al servidor
+
+      - name: 7. Enviar Email de Éxito
+        # Este paso SOLO se ejecuta si TODO lo anterior ha funcionado
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "PR PROCESADO: ${{ github.event.pull_request.title }}"
+          to: ${{ secrets.MAIL_DESTINATION }}
+          from: GitHub Actions AI Robot
+          body: |
+            INFORME TÉCNICO DE FUSIÓN DE CÓDIGO
+            -----------------------------------
+            Estado: OK - PROCESADO CORRECTAMENTE
+            
+            FLUJO DE RAMAS:
+            - Origen (Feature): ${{ github.event.pull_request.head.ref }}
+            - Destino (Base): ${{ github.event.pull_request.base.ref }}
+            - Etiqueta Generada: ${{ steps.get_tag.outputs.version }}
+            
+            -----------------------------------
+            RESUMEN DE IA (COPILOT):
+            ${{ steps.ia_summary.outputs.resumen_ia }}
+            -----------------------------------
+            
+            Nota: El archivo JSON con los metadatos está disponible en los artefactos del workflow.
+
+      - name: 8. Enviar Email de Error 
+        # Este paso SOLO se ejecuta si algo ha fallado antes
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "ERROR en Workflow: ${{ github.event.pull_request.title }}"
+          to: ${{ secrets.MAIL_DESTINATION }}
+          from: GitHub Actions AI Robot
+          body: |
+            Se ha detectado un error al procesar el PR #${{ github.event.pull_request.number }}.
+            
+            Por favor, revise los logs en la pestaña Actions de GitHub.
